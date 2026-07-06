@@ -1,0 +1,6 @@
+{
+  "name": "Lyrics Fill-In-The-Blank",
+  "description": "An Android-style mobile web application for lyrics dictation and fill-in-the-blank practice, emphasizing listening comprehension and speed typing on mobile.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
