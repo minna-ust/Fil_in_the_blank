@@ -157,6 +157,7 @@ export default function App() {
   const [typedBlanks, setTypedBlanks] = useState<{[blankIdx: number]: string}>({});
   const [focusedBlankIdx, setFocusedBlankIdx] = useState<number | null>(null);
   const [isSentenceCompleted, setIsSentenceCompleted] = useState<boolean>(false);
+  const [showResetMenu, setShowResetMenu] = useState<boolean>(false);
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
 
   // AI Explanation Drawer
@@ -650,6 +651,81 @@ export default function App() {
       });
       setTypedBlanks(autofill);
     }
+  };
+
+  const handleResetCurrentSentence = () => {
+    // 1. Clear typed blanks in UI
+    setTypedBlanks({});
+    setIsSentenceCompleted(false);
+
+    // 2. Remove from completedSentences list
+    const songTitle = activeSong.title;
+    const sentenceId = currentSentence.id;
+    const currentCompletions = completedSentences[songTitle] || [];
+    
+    if (currentCompletions.includes(sentenceId)) {
+      const updatedCompletions = currentCompletions.filter(id => id !== sentenceId);
+      const newCompletedState = { ...completedSentences, [songTitle]: updatedCompletions };
+      setCompletedSentences(newCompletedState);
+      localStorage.setItem('lyrics_completed_sentences', JSON.stringify(newCompletedState));
+    }
+
+    playSynthSound('hint');
+  };
+
+  const handleResetAllSentences = (reblank: boolean = false) => {
+    const songTitle = activeSong.title;
+
+    // 1. Clear completions for this song in state and localStorage
+    const newCompletedState = { ...completedSentences, [songTitle]: [] };
+    setCompletedSentences(newCompletedState);
+    localStorage.setItem('lyrics_completed_sentences', JSON.stringify(newCompletedState));
+
+    // 2. Clear current typed answers
+    setTypedBlanks({});
+    setIsSentenceCompleted(false);
+
+    // 3. If reblank is true, we regenerate the blanks dynamically for every sentence!
+    if (reblank) {
+      const updatedSentences = activeSong.sentences.map(sent => ({
+        ...sent,
+        blanks: autoGenerateBlanks(sent.text)
+      }));
+      
+      const updatedSong = {
+        ...activeSong,
+        sentences: updatedSentences
+      };
+      
+      setActiveSong(updatedSong);
+
+      // We should also update the songsList state so that navigating back and forth keeps the new blanks!
+      setSongsList(prevList => prevList.map(s => {
+        if (s.title === songTitle) {
+          return updatedSong;
+        }
+        return s;
+      }));
+
+      // And if it is a custom song saved in localStorage, we should persist it there too!
+      const savedCustom = localStorage.getItem('lyrics_custom_songs');
+      if (savedCustom) {
+        try {
+          const parsed: DictationMaterial[] = JSON.parse(savedCustom);
+          const updatedCustom = parsed.map(s => {
+            if (s.title === songTitle) {
+              return updatedSong;
+            }
+            return s;
+          });
+          localStorage.setItem('lyrics_custom_songs', JSON.stringify(updatedCustom));
+        } catch (e) {
+          console.error('Error updating custom songs with new blanks:', e);
+        }
+      }
+    }
+
+    playSynthSound('success');
   };
 
   const handleInputChange = (blankIdx: number, val: string, targetWord: string) => {
@@ -1400,6 +1476,13 @@ export default function App() {
             {/* ----------------- PLAY CONTROL PANEL (FIXED BOTTOM) ----------------- */}
             <div className={`absolute bottom-0 inset-x-0 border-t p-3.5 space-y-3 z-10 transition-colors ${isCosmic ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200 shadow-lg'}`}>
               
+              {showResetMenu && (
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowResetMenu(false)}
+                />
+              )}
+
               {/* TIMELINE PROGRESS SLIDER */}
               <div className="flex items-center gap-3">
                 <span className="text-[9px] font-mono text-slate-400 shrink-0">
@@ -1535,17 +1618,81 @@ export default function App() {
                 </div>
 
                 {/* Quick reset active sentence answers */}
-                <button
-                  onClick={() => {
-                    setTypedBlanks({});
-                    setIsSentenceCompleted(false);
-                    playSynthSound('hint');
-                  }}
-                  className={`p-2 rounded-lg text-[10px] font-bold border transition-colors ${isCosmic ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'}`}
-                  id="btn-clear-sentence"
-                >
-                  重置
-                </button>
+                <div className="relative z-20">
+                  {showResetMenu && (
+                    <div 
+                      className={`absolute right-0 bottom-full mb-2 w-48 rounded-xl border p-1 shadow-lg z-30 flex flex-col gap-1 transition-all animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+                        isCosmic 
+                          ? 'bg-slate-900 border-slate-800 text-slate-200' 
+                          : 'bg-white border-slate-200 text-slate-700'
+                      }`}
+                      id="reset-options-menu"
+                    >
+                      <div className="px-2.5 py-1.5 text-[9px] text-slate-400 font-bold border-b border-dashed border-slate-200 dark:border-slate-800">
+                        选择重置操作
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResetCurrentSentence();
+                          setShowResetMenu(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition-colors ${
+                          isCosmic ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-700'
+                        }`}
+                        id="btn-reset-current"
+                        type="button"
+                      >
+                        <RotateCcw size={12} className="text-blue-500" />
+                        <span>重置当前句子</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResetAllSentences(false);
+                          setShowResetMenu(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition-colors ${
+                          isCosmic ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-700'
+                        }`}
+                        id="btn-reset-all"
+                        type="button"
+                      >
+                        <RefreshCw size={12} className="text-amber-500" />
+                        <span>重置所有句子</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResetAllSentences(true);
+                          setShowResetMenu(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center gap-2 transition-colors ${
+                          isCosmic ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-700'
+                        }`}
+                        id="btn-reset-all-reblank"
+                        type="button"
+                      >
+                        <Sparkles size={12} className="text-emerald-500 animate-pulse" />
+                        <span>重置并重新随机挖空</span>
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => setShowResetMenu(!showResetMenu)}
+                    className={`p-2 rounded-lg text-[10px] font-bold border transition-all ${
+                      showResetMenu
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                        : isCosmic 
+                          ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' 
+                          : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
+                    }`}
+                    id="btn-clear-sentence"
+                  >
+                    重置
+                  </button>
+                </div>
               </div>
 
             </div>
