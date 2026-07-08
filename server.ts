@@ -136,7 +136,7 @@ CRITICAL: Return ONLY raw JSON matching the schema. Do NOT wrap the JSON in mark
   });
 
   // Serve static assets in production, or use Vite dev server in development
-  if (process.env.NODE_ENV === 'production' || process.env.DISABLE_HMR === 'true') {
+  if (process.env.NODE_ENV === 'production') {
     // Serve static files in production
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
