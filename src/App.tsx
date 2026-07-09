@@ -148,6 +148,7 @@ export default function App() {
   // Display Options
   const [showOriginal, setShowOriginal] = useState<boolean>(false);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
+  const [showBlankHint, setShowBlankHint] = useState<boolean>(true);
   const [favorites, setFavorites] = useState<{[key: string]: number[]}>({}); // {songTitle: [sentenceIds]}
   const [completedSentences, setCompletedSentences] = useState<{[key: string]: number[]}>({}); // {songTitle: [sentenceIds]}
   const [selectedVoiceName, setSelectedVoiceName] = useState<string>('');
@@ -1387,7 +1388,9 @@ export default function App() {
                     const wordClean = word.clean;
                     const isCorrect = (typedBlanks[index] || '').trim().toLowerCase() === wordClean.toLowerCase();
                     const value = typedBlanks[index] || '';
-                    const placeholder = getWordPlaceholder(wordClean);
+                    const placeholder = showBlankHint 
+                      ? getWordPlaceholder(wordClean) 
+                      : '·'.repeat(wordClean.length);
                     
                     // Style input sizing based on letter count
                     const widthStyle = `${Math.max(wordClean.length * 10 + 20, 52)}px`;
@@ -1526,6 +1529,18 @@ export default function App() {
                     id="btn-toggle-original"
                   >
                     <span>参考英文</span>
+                  </button>
+                  <button
+                    onClick={() => setShowBlankHint(!showBlankHint)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all ${
+                      showBlankHint 
+                        ? 'bg-blue-600/10 text-blue-500 border border-blue-500/20' 
+                        : 'bg-slate-100 dark:bg-slate-850 text-slate-400 border border-transparent'
+                    }`}
+                    id="btn-toggle-blank-hint"
+                  >
+                    {showBlankHint ? <Eye size={11} /> : <EyeOff size={11} />}
+                    <span>挖空提示</span>
                   </button>
                 </div>
 
