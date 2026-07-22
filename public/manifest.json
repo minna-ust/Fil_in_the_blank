@@ -1,0 +1,18 @@
+{
+  "name": "Lyrics Fill-In-The-Blank",
+  "short_name": "LyricsDict",
+  "description": "An Android-style mobile web application for lyrics dictation and fill-in-the-blank practice, emphasizing listening comprehension.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./pwa_icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
