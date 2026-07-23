@@ -3,9 +3,21 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// Remove crossorigin attribute for file:// protocol compatibility in Android WebView / Website 2 APK Builder
+const removeCrossorigin = () => ({
+  name: 'remove-crossorigin',
+  transformIndexHtml(html: string) {
+    return html.replace(/\s+crossorigin/g, '');
+  },
+});
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    base: './',
+    plugins: [react(), tailwindcss(), removeCrossorigin()],
+    build: {
+      modulePreload: false,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

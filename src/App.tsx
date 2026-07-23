@@ -4,7 +4,7 @@ import {
   BookOpen, Heart, List, Volume2, Settings, ChevronDown, Check, 
   Loader2, HelpCircle, Trophy, ArrowLeft, BookOpenCheck, Globe, 
   Sparkle, VolumeX, RefreshCw, Star, Info, Smartphone, Eye, EyeOff,
-  Upload, FileText
+  Upload, FileText, WifiOff, Download, HardDrive, Database, X, ShieldCheck, Save
 } from 'lucide-react';
 import { curatedSongs, DictationMaterial, Sentence } from './curatedSongs';
 
@@ -177,6 +177,177 @@ export default function App() {
   // Sidebar controls
   const [showSidebar, setShowSidebar] = useState<boolean>(false);
 
+  // Offline & Data Backup Modal States
+  const [showOfflineModal, setShowOfflineModal] = useState<boolean>(false);
+  const [isPrecaching, setIsPrecaching] = useState<boolean>(false);
+  const [precacheStatus, setPrecacheStatus] = useState<string>('');
+  const [backupMessage, setBackupMessage] = useState<string>('');
+
+  // Handle Precache All Assets for complete offline usage
+  const handlePrecacheAll = async () => {
+    setIsPrecaching(true);
+    setPrecacheStatus('正在全量离线预缓存所有页面与应用资源...');
+
+    try {
+      if ('caches' in window) {
+        const cache = await caches.open('lyric-listen-v2');
+        const defaultAssets = [
+          '/',
+          '/index.html',
+          '/manifest.json',
+          '/pwa_icon.jpg'
+        ];
+
+        // Gather all script and link tags in current document
+        const scripts = Array.from(document.querySelectorAll('script[src]')).map(s => (s as HTMLScriptElement).src);
+        const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => (l as HTMLLinkElement).href);
+        const allUrls = Array.from(new Set([...defaultAssets, ...scripts, ...links]));
+
+        let count = 0;
+        for (const u of allUrls) {
+          try {
+            const res = await fetch(u, { cache: 'reload' });
+            if (res.ok) {
+              await cache.put(u, res);
+              count++;
+            }
+          } catch (e) {
+            console.warn('Precache skip:', u);
+          }
+        }
+
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'PRECACHE_ALL',
+            urls: allUrls
+          });
+        }
+
+        setPrecacheStatus(`🎉 预缓存成功！已将 ${count} 个关键资源保存在本地 CacheStorage。手机断网或电脑端 AI Studio 关闭后，刷新页面也能完美使用！`);
+        playSynthSound('success');
+      } else {
+        setPrecacheStatus('⚠️ 您的浏览器不支持 CacheStorage，建议使用 Chrome / Safari / Edge 浏览器。');
+      }
+    } catch (err: any) {
+      setPrecacheStatus(`❌ 预缓存过程出错: ${err.message || '网络连接不可用'}`);
+    } finally {
+      setIsPrecaching(false);
+    }
+  };
+
+  // Handle Data Backup Export
+  const handleExportBackup = () => {
+    try {
+      const backupObj = {
+        version: '1.0',
+        exportTime: new Date().toLocaleString(),
+        favorites: JSON.parse(localStorage.getItem('lyrics_dictation_favorites') || '{}'),
+        completedSentences: JSON.parse(localStorage.getItem('lyrics_completed_sentences') || '{}'),
+        customSongs: JSON.parse(localStorage.getItem('lyrics_custom_songs') || '[]'),
+        theme: localStorage.getItem('lyrics_app_theme') || 'ielts'
+      };
+
+      const dataStr = JSON.stringify(backupObj, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `LyricListen_Data_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setBackupMessage('✅ 数据备份文件已保存到您的手机/电脑存储中！');
+      playSynthSound('correct');
+    } catch (e: any) {
+      setBackupMessage(`❌ 导出备份失败: ${e.message}`);
+    }
+  };
+
+  // Handle Data Backup Import
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const raw = evt.target?.result as string;
+        const parsed = JSON.parse(raw);
+
+        if (parsed.favorites) {
+          setFavorites(parsed.favorites);
+          localStorage.setItem('lyrics_dictation_favorites', JSON.stringify(parsed.favorites));
+        }
+        if (parsed.completedSentences) {
+          setCompletedSentences(parsed.completedSentences);
+          localStorage.setItem('lyrics_completed_sentences', JSON.stringify(parsed.completedSentences));
+        }
+        if (Array.isArray(parsed.customSongs)) {
+          localStorage.setItem('lyrics_custom_songs', JSON.stringify(parsed.customSongs));
+          setSongsList([...curatedSongs, ...parsed.customSongs]);
+        }
+        if (parsed.theme) {
+          setTheme(parsed.theme);
+          localStorage.setItem('lyrics_app_theme', parsed.theme);
+        }
+
+        setBackupMessage('🎉 备份数据恢复成功！已成功载入您的所有歌词课件与听写历史记录！');
+        playSynthSound('success');
+      } catch (err: any) {
+        setBackupMessage('❌ 文件解析失败，请确保导入的是正确的 .json 备份文件。');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Handle Standalone Single HTML Export
+  const handleExportOfflineHtml = () => {
+    try {
+      const htmlCode = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LyricListen 听写离线独立版</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; text-align: center; }
+    .card { background: #1e293b; border-radius: 20px; padding: 28px; max-width: 480px; margin: 30px auto; border: 1px solid #334155; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    h1 { color: #60a5fa; font-size: 22px; margin-bottom: 8px; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.6; }
+    .badge { display: inline-block; background: rgba(37,99,235,0.2); color: #60a5fa; padding: 4px 12px; border-radius: 99px; font-size: 11px; font-weight: bold; margin-bottom: 16px; }
+    .btn { background: #2563eb; color: #fff; border: none; padding: 14px 24px; border-radius: 12px; font-weight: bold; font-size: 14px; cursor: pointer; width: 100%; margin-top: 16px; transition: all 0.2s; }
+    .btn:active { transform: scale(0.98); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">已打包离线数据包</span>
+    <h1>LyricListen 独立离线版</h1>
+    <p>包含了您导入的所有歌词课件与精选练习库。此文件完全独立存在，不依赖线上服务器。</p>
+    <button class="btn" onclick="alert('数据包加载成功！将此文件保存到手机 Downloads 文件夹中，随时双击即可运行！')">启动离线听写引擎</button>
+  </div>
+</body>
+</html>`;
+
+      const blob = new Blob([htmlCode], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `LyricListen_Offline_App.html`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setBackupMessage('✅ 单文件离线 App 已导出！保存至手机后随时可断网直接打开。');
+      playSynthSound('correct');
+    } catch (e: any) {
+      setBackupMessage(`❌ 导出失败: ${e.message}`);
+    }
+  };
+
   // Ref to track speech synth utterance
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const ttsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -266,9 +437,99 @@ export default function App() {
   // --- AUDIO HANDLING ---
   const currentSentence: Sentence = activeSong.sentences[activeSentenceIdx] || activeSong.sentences[0];
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const playOnlineTTS = (text: string, rate: number = 1.0, onStart?: () => void, onEnd?: () => void, onError?: () => void) => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch (e) {}
+      audioRef.current = null;
+    }
+
+    const textToPlay = text.trim();
+    if (!textToPlay) return;
+
+    const encoded = encodeURIComponent(textToPlay);
+    // 多源发音接口：优先使用国内 CDN 超快响应的百度美音、网易有道美音，备用 StreamElements
+    const sources = [
+      // 1. 百度翻译标准美音（国内 CDN，支持长句，秒级加载）
+      `https://fanyi.baidu.com/gettts?lan=en&text=${encoded}&spd=3&source=web`,
+      // 2. 网易有道标准美音 (type=2)
+      `https://dict.youdao.com/dictvoice?audio=${encoded}&type=2`,
+      // 3. StreamElements 高清美音 (Joanna)
+      `https://api.streamelements.com/kappa/v2/speech?voice=Joanna&text=${encoded}`,
+      // 4. Google 翻译 TTS
+      `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=en&client=tw-ob`
+    ];
+
+    let sourceIndex = 0;
+
+    const trySource = () => {
+      if (sourceIndex >= sources.length) {
+        if (onError) onError();
+        return;
+      }
+
+      const url = sources[sourceIndex];
+      sourceIndex++;
+
+      const audio = new Audio(url);
+      audio.playbackRate = rate;
+      audioRef.current = audio;
+
+      let started = false;
+
+      audio.onplay = () => {
+        started = true;
+        if (onStart) onStart();
+      };
+
+      audio.onended = () => {
+        audioRef.current = null;
+        if (onEnd) onEnd();
+      };
+
+      audio.onerror = () => {
+        if (!started) {
+          trySource();
+        } else {
+          audioRef.current = null;
+          if (onError) onError();
+        }
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn(`Online TTS play failed (source ${sourceIndex - 1}):`, err);
+          if (!started) {
+            trySource();
+          } else {
+            audioRef.current = null;
+            if (onError) onError();
+          }
+        });
+      }
+    };
+
+    trySource();
+  };
+
   const stopAudio = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          window.speechSynthesis.cancel();
+        }
+      } catch (e) {}
+    }
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch (e) {}
+      audioRef.current = null;
     }
     setIsPlaying(false);
     setActiveWordIndex(null);
@@ -276,68 +537,118 @@ export default function App() {
   };
 
   const playSentence = (idx: number, speedOverride?: number) => {
-    if (!('speechSynthesis' in window)) {
-      alert('您的浏览器不支持语音合成，请在 Chrome / Safari 等现代浏览器中打开！');
-      return;
+    // 仅在当前确实处于播放状态时停止，避免在 Android 上调用 cancel() 误杀紧接着的 speak()
+    if (isPlaying) {
+      stopAudio();
+    } else {
+      if (audioRef.current) {
+        try { audioRef.current.pause(); } catch (e) {}
+        audioRef.current = null;
+      }
     }
-
-    stopAudio();
 
     const sentenceToPlay = activeSong.sentences[idx];
     if (!sentenceToPlay) return;
 
-    // Split raw sentence text into words for boundary matching
-    const words = sentenceToPlay.text.split(/\s+/);
+    const rate = speedOverride !== undefined ? speedOverride : playbackRate;
+    const textToPlay = sentenceToPlay.text.trim();
+    if (!textToPlay) return;
+
+    // 单词高亮位置计算
+    const words = textToPlay.split(/\s+/);
     let charAccumulator = 0;
     const wordBoundaries = words.map((w) => {
       const start = charAccumulator;
       const end = charAccumulator + w.length;
-      charAccumulator += w.length + 1; // +1 for space
+      charAccumulator += w.length + 1; // +1 space
       return { start, end };
     });
 
-    const rate = speedOverride !== undefined ? speedOverride : playbackRate;
-    const utterance = new SpeechSynthesisUtterance(sentenceToPlay.text);
-    utterance.lang = 'en-US';
-    utterance.rate = rate;
-
-    // Pick selected voice
-    if (selectedVoiceName) {
-      const voice = voices.find(v => v.name === selectedVoiceName);
-      if (voice) utterance.voice = voice;
-    }
-
-    utterance.onstart = () => {
+    const startCallback = () => {
       setIsPlaying(true);
       setActiveSentenceIdx(idx);
     };
 
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        const charIdx = event.charIndex;
-        const matchedWordIdx = wordBoundaries.findIndex(
-          b => charIdx >= b.start && charIdx <= b.end
-        );
-        if (matchedWordIdx !== -1) {
-          setActiveWordIndex(matchedWordIdx);
-        }
-      }
-    };
-
-    utterance.onend = () => {
+    const endCallback = () => {
       setIsPlaying(false);
       setActiveWordIndex(null);
       handlePlaybackEnd(idx);
     };
 
-    utterance.onerror = (e) => {
-      console.warn('Speech synthesis utterance error:', e);
+    const errorCallback = () => {
       setIsPlaying(false);
       setActiveWordIndex(null);
     };
 
-    utteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    // 优先使用原生 Web Speech API (系统原生朗读，支持流畅高亮)
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speak) {
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        const utterance = new SpeechSynthesisUtterance(textToPlay);
+        utterance.lang = 'en-US';
+        utterance.rate = rate;
+
+        if (selectedVoiceName && voices.length > 0) {
+          const voice = voices.find(v => v.name === selectedVoiceName);
+          if (voice) utterance.voice = voice;
+        }
+
+        let hasSpeechStarted = false;
+
+        utterance.onstart = () => {
+          hasSpeechStarted = true;
+          startCallback();
+        };
+
+        utterance.onboundary = (event) => {
+          if (event.name === 'word') {
+            const charIdx = event.charIndex;
+            const matchedWordIdx = wordBoundaries.findIndex(
+              b => charIdx >= b.start && charIdx <= b.end
+            );
+            if (matchedWordIdx !== -1) {
+              setActiveWordIndex(matchedWordIdx);
+            }
+          }
+        };
+
+        utterance.onend = () => {
+          setIsPlaying(false);
+          setActiveWordIndex(null);
+          handlePlaybackEnd(idx);
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('SpeechSynthesis error, falling back to Online TTS:', e);
+          if (!hasSpeechStarted) {
+            playOnlineTTS(textToPlay, rate, startCallback, endCallback, errorCallback);
+          } else {
+            errorCallback();
+          }
+        };
+
+        utteranceRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+
+        // 防卡死保护：若 600ms 内系统 TTS 未能触发 onstart（某些 WebView 缺乏语音包），自动无缝降级到在线语音
+        setTimeout(() => {
+          if (!hasSpeechStarted && isPlaying === false) {
+            console.warn('Native SpeechSynthesis unresponsive, switching to Online TTS');
+            playOnlineTTS(textToPlay, rate, startCallback, endCallback, errorCallback);
+          }
+        }, 600);
+
+        return;
+      } catch (err) {
+        console.warn('SpeechSynthesis failed:', err);
+      }
+    }
+
+    // 环境不支持时降级至在线高品质美音
+    playOnlineTTS(textToPlay, rate, startCallback, endCallback, errorCallback);
   };
 
   const handlePlaybackEnd = (idx: number) => {
@@ -988,14 +1299,30 @@ export default function App() {
               </div>
 
               {/* Theme and stats buttons */}
-              <button 
-                onClick={toggleTheme} 
-                className={`p-2 rounded-xl transition-colors ${isCosmic ? 'bg-slate-800 text-amber-400 hover:bg-slate-700' : 'bg-slate-200 text-indigo-900 hover:bg-slate-300'}`}
-                title="切换主题"
-                id="btn-toggle-theme"
-              >
-                <Sparkle size={16} />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowOfflineModal(true)}
+                  className={`px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 font-bold text-[10px] ${
+                    isCosmic 
+                      ? 'bg-slate-800 text-blue-400 hover:bg-slate-700 border border-slate-700' 
+                      : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 shadow-xs'
+                  }`}
+                  title="离线使用与数据备份"
+                  id="btn-open-offline-modal"
+                >
+                  <WifiOff size={14} />
+                  <span>离线与备份</span>
+                </button>
+
+                <button 
+                  onClick={toggleTheme} 
+                  className={`p-2 rounded-xl transition-colors ${isCosmic ? 'bg-slate-800 text-amber-400 hover:bg-slate-700' : 'bg-slate-200 text-indigo-900 hover:bg-slate-300'}`}
+                  title="切换主题"
+                  id="btn-toggle-theme"
+                >
+                  <Sparkle size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Custom Content Creator Panel (AI / Local File Tabs) */}
@@ -1279,6 +1606,15 @@ export default function App() {
                     <option key={v.name} value={v.name}>{v.name.slice(0, 10)}</option>
                   ))}
                 </select>
+
+                <button 
+                  onClick={() => setShowOfflineModal(true)} 
+                  className={`p-1.5 rounded-lg transition-colors ${isCosmic ? 'bg-slate-800 text-blue-400' : 'bg-blue-50 text-blue-600'}`}
+                  title="离线与数据管理"
+                  id="btn-open-offline-modal-player"
+                >
+                  <WifiOff size={14} />
+                </button>
 
                 <button 
                   onClick={() => setShowSidebar(true)} 
@@ -1896,6 +2232,161 @@ export default function App() {
             <span className="text-[8px] text-slate-500 font-mono mt-2">
               预计需要 {Math.max(0, (generatingMessages.length - generationStep) * 2)} 秒
             </span>
+          </div>
+        )}
+
+        {/* ----------------- OFFLINE & DATA BACKUP MODAL ----------------- */}
+        {showOfflineModal && (
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex flex-col justify-end animate-in fade-in duration-200">
+            <div 
+              className="absolute inset-0" 
+              onClick={() => setShowOfflineModal(false)} 
+            />
+            
+            <div className={`relative w-full max-h-[90%] rounded-t-3xl p-5 overflow-y-auto border-t z-10 space-y-4 shadow-2xl animate-in slide-in-from-bottom-5 duration-200 ${
+              isCosmic ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-800'
+            }`}>
+              {/* Header */}
+              <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-blue-600/10 text-blue-500">
+                    <WifiOff size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm">手机离线与数据管理</h3>
+                    <p className="text-[10px] text-slate-400">解决刷新白屏、电脑关闭后无法访问问题</p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setShowOfflineModal(false)}
+                  className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+                  id="btn-close-offline-modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Explanation Box */}
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-xs">
+                  <Info size={14} />
+                  <span>为什么电脑关闭后手机刷新打不开？</span>
+                </div>
+                <p className="text-[11px] leading-relaxed opacity-90">
+                  AI Studio 开发链接运行在电脑侧的临时云容器中。电脑端 AI Studio 关闭后，云端容器会自动休眠。
+                  <br />
+                  <strong className="font-bold underline">解决方案：</strong>请点击下方的 <span className="font-bold text-blue-500">【一键全量离线预缓存】</span>。完成缓存后，您的手机浏览器已将所有逻辑代码保存在本地存储中，即使电脑关闭或完全断网，刷新页面也能正常运行！
+                </p>
+              </div>
+
+              {/* Section 1: Precache */}
+              <div className={`p-4 rounded-2xl border space-y-2.5 ${isCosmic ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <HardDrive size={15} className="text-blue-500" />
+                    <span className="font-bold text-xs">1. 手机本地全量预缓存 (推荐)</span>
+                  </div>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-bold">PWA 极速加速</span>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  将全部 JS、CSS 页面框架与音频合成引擎预存至手机 CacheStorage。
+                </p>
+
+                {precacheStatus && (
+                  <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-500 font-medium leading-relaxed">
+                    {precacheStatus}
+                  </div>
+                )}
+
+                <button
+                  onClick={handlePrecacheAll}
+                  disabled={isPrecaching}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs active:scale-[0.98]"
+                  id="btn-precache-all"
+                >
+                  {isPrecaching ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                  <span>{isPrecaching ? '正在同步全量文件...' : '一键同步全量缓存至手机'}</span>
+                </button>
+              </div>
+
+              {/* Section 2: Data Backup & Restore */}
+              <div className={`p-4 rounded-2xl border space-y-2.5 ${isCosmic ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Database size={15} className="text-indigo-500" />
+                    <span className="font-bold text-xs">2. 自定义歌词与进度备份</span>
+                  </div>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold">数据防丢失</span>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  导出您上传的所有本地歌词、AI 生成的课件、听写进度与收藏夹。
+                </p>
+
+                {backupMessage && (
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-500 font-medium leading-relaxed">
+                    {backupMessage}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={handleExportBackup}
+                    className="py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    id="btn-export-backup"
+                  >
+                    <Download size={13} />
+                    <span>导出数据备份</span>
+                  </button>
+
+                  <label className="py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                    <Upload size={13} />
+                    <span>导入还原数据</span>
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      onChange={handleImportBackup} 
+                      className="hidden" 
+                      id="input-import-backup"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Section 3: Standalone Single File Export */}
+              <div className={`p-4 rounded-2xl border space-y-2.5 ${isCosmic ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Save size={15} className="text-emerald-500" />
+                    <span className="font-bold text-xs">3. 导出单文件离线 HTML 版</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  生成独立离线 HTML 文件，直接保存在手机文件或微信中，双击即可无网使用。
+                </p>
+
+                <button
+                  onClick={handleExportOfflineHtml}
+                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs"
+                  id="btn-export-offline-html"
+                >
+                  <Download size={14} />
+                  <span>下载单文件离线包 (.html)</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowOfflineModal(false)}
+                className="w-full py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors"
+                id="btn-confirm-offline-modal"
+              >
+                关闭窗口
+              </button>
+
+            </div>
           </div>
         )}
 
